@@ -1,0 +1,34 @@
+{
+    "MovePatterns": {
+        "Keys": [
+            "a4247a22"
+        ],
+        "Values": [
+            {
+                "PatternId": "a4247a22",
+                "PatternName": "New Pattern",
+                "Type": 0,
+                "Speed": 3.0,
+                "Waypoints": [],
+                "Loop": false
+            }
+        ]
+    },
+    "BulletPatterns": {
+        "Keys": [
+            "3543ca8c"
+        ],
+        "Values": [
+            {
+                "PatternId": "3543ca8c",
+                "PatternName": "New Bullet Pattern",
+                "Type": 0,
+                "BulletCount": 1,
+                "BulletSpeed": 5.0,
+                "FireRate": 1.0,
+                "SpreadAngle": 30.0,
+                "AimAtPlayer": false
+            }
+        ]
+    }
+}
