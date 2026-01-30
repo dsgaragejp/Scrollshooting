@@ -2,12 +2,9 @@ Shader "StellarVanguard/CosmicBackground"
 {
     Properties
     {
-        _MainTex ("Feedback Texture", 2D) = "black" {}
         _Speed ("Animation Speed", Range(0.1, 5.0)) = 1.0
-        _Intensity ("Color Intensity", Range(0.1, 2.0)) = 1.0
-        _FractalScale ("Fractal Scale", Range(0.1, 1.0)) = 0.3
-        _FeedbackStrength ("Feedback Strength", Range(0.0, 1.0)) = 0.5
-        _DistortAmount ("Distortion Amount", Range(0.0, 0.1)) = 0.04
+        _Intensity ("Color Intensity", Range(0.5, 3.0)) = 1.5
+        _Scale ("Pattern Scale", Range(0.1, 2.0)) = 0.5
     }
 
     SubShader
@@ -36,76 +33,60 @@ Shader "StellarVanguard/CosmicBackground"
                 float2 uv : TEXCOORD0;
             };
 
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
-
             CBUFFER_START(UnityPerMaterial)
-                float4 _MainTex_ST;
                 float _Speed;
                 float _Intensity;
-                float _FractalScale;
-                float _FeedbackStrength;
-                float _DistortAmount;
+                float _Scale;
             CBUFFER_END
 
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
                 OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
-                OUT.uv = TRANSFORM_TEX(IN.uv, _MainTex);
+                OUT.uv = IN.uv;
                 return OUT;
-            }
-
-            // XorDev-inspired fractal noise function
-            float4 cosmicFractal(float2 uv, float time, float2 resolution)
-            {
-                float2 p = (uv * 2.0 - 1.0) / _FractalScale;
-                float4 o = float4(0, 0, 0, 0);
-                float2 v = p;
-
-                // Outer loop - color accumulation
-                for (float i = 1.0; i < 9.0; i += 1.0)
-                {
-                    // Inner loop - fractal iteration
-                    v = p;
-                    for (float f = 1.0; f < 9.0; f += 1.0)
-                    {
-                        float2 offset = sin(ceil(v.yx * f + i * 0.3) + resolution - time * _Speed * 0.5) / f;
-                        v += offset;
-                    }
-
-                    // Distance-based coloring
-                    float l = dot(p, p) - 5.0 - 2.0 / v.y;
-                    float invL = 0.1 / abs(l);
-
-                    // Rainbow color based on iteration
-                    float4 rainbow = cos(i / 3.0 + 0.1 / l + float4(1, 2, 3, 4)) + 1.0;
-                    o += invL * rainbow * _Intensity;
-                }
-
-                return o;
             }
 
             float4 frag(Varyings IN) : SV_Target
             {
-                float time = _Time.y;
-                float2 resolution = float2(1920, 1080); // Approximate resolution
+                float time = _Time.y * _Speed;
+                float2 uv = IN.uv;
 
-                // Generate fractal pattern
-                float4 fractal = cosmicFractal(IN.uv, time, resolution);
+                // Centered coordinates
+                float2 p = (uv - 0.5) * 2.0 / _Scale;
 
-                // Feedback distortion
-                float2 distortedUV = IN.uv + _DistortAmount * sin(IN.uv * 10.0 + IN.uv.yx * 1.66);
-                float4 feedback = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, distortedUV);
+                // XorDev-style fractal
+                float4 col = float4(0.02, 0.01, 0.05, 1.0); // Deep space base
 
-                // Combine with feedback
-                float4 color = fractal + feedback * fractal * _FeedbackStrength;
+                for (float i = 1.0; i < 7.0; i += 1.0)
+                {
+                    // Fractal warping
+                    float2 v = p;
+                    for (float j = 1.0; j < 5.0; j += 1.0)
+                    {
+                        v += sin(v.yx * j + i * 0.5 + time * 0.2) / (j + 1.0);
+                    }
 
-                // Apply tanh for smooth clamping (like XorDev's original)
-                color = max(tanh(color), 0.0);
-                color.a = 1.0;
+                    // Distance field
+                    float d = length(p) - 2.0 - 1.0 / (abs(v.y) + 0.5);
+                    float glow = 0.08 / (abs(d) + 0.02);
 
-                return color;
+                    // Rainbow colors
+                    float3 rgb = 0.5 + 0.5 * cos(i * 0.7 + float3(0.0, 2.1, 4.2) + time * 0.1);
+                    col.rgb += rgb * glow * _Intensity * 0.2;
+                }
+
+                // Stars
+                float2 starUV = uv * 100.0;
+                float star = frac(sin(dot(floor(starUV), float2(12.9898, 78.233))) * 43758.5453);
+                star = smoothstep(0.995, 1.0, star);
+                col.rgb += star * 0.8;
+
+                // Tone mapping
+                col.rgb = 1.0 - exp(-col.rgb * 1.5);
+                col.a = 1.0;
+
+                return col;
             }
             ENDHLSL
         }
