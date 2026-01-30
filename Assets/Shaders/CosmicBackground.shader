@@ -2,19 +2,17 @@ Shader "StellarVanguard/CosmicBackground"
 {
     Properties
     {
-        _Speed ("Animation Speed", Range(0.1, 5.0)) = 1.0
-        _Intensity ("Color Intensity", Range(0.5, 3.0)) = 1.5
-        _Scale ("Pattern Scale", Range(0.1, 2.0)) = 0.5
+        _Speed ("Animation Speed", Range(0.1, 3.0)) = 1.0
+        _Scale ("Pattern Scale", Range(10.0, 1000.0)) = 80.0
+        _ColorIntensity ("Color Intensity", Range(0.05, 0.5)) = 0.1
     }
 
     SubShader
     {
-        Tags { "RenderType"="Opaque" "RenderPipeline"="UniversalPipeline" }
+        Tags { "RenderType"="Opaque" "Queue"="Background" "RenderPipeline"="UniversalPipeline" }
 
         Pass
         {
-            Name "CosmicBackground"
-
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -33,11 +31,9 @@ Shader "StellarVanguard/CosmicBackground"
                 float2 uv : TEXCOORD0;
             };
 
-            CBUFFER_START(UnityPerMaterial)
-                float _Speed;
-                float _Intensity;
-                float _Scale;
-            CBUFFER_END
+            float _Speed;
+            float _Scale;
+            float _ColorIntensity;
 
             Varyings vert(Attributes IN)
             {
@@ -49,46 +45,57 @@ Shader "StellarVanguard/CosmicBackground"
 
             float4 frag(Varyings IN) : SV_Target
             {
-                float time = _Time.y * _Speed;
-                float2 uv = IN.uv;
+                // XorDev's fractal cosmic shader
+                // Original: vec2 p=(FC.xy*2.-r)/r.y/.3,v;
+                // for(float i,l,f;i++<9.;o+=.1/abs(l=dot(p,p)-5.-2./v.y)*(cos(i/3.+.1/l+vec4(1,2,3,4))+1.))
+                //   for(v=p,f=0.;f++<9.;v+=sin(ceil(v.yx*f+i*.3)+r-t/2.)/f);
 
-                // Centered coordinates
-                float2 p = (uv - 0.5) * 2.0 / _Scale;
+                // Use UV directly, normalized to -1 to 1 range, then scaled
+                float2 uv = IN.uv * 2.0 - 1.0;  // -1 to 1
+                uv.x *= 16.0 / 9.0;              // Aspect ratio correction
 
-                // XorDev-style fractal
-                float4 col = float4(0.02, 0.01, 0.05, 1.0); // Deep space base
+                float2 p = uv * _Scale;          // Scale the pattern
+                float t = _Time.y * _Speed;
 
-                for (float i = 1.0; i < 7.0; i += 1.0)
+                float4 o = float4(0.0, 0.0, 0.0, 0.0);
+                float2 v = float2(0.0, 0.0);
+
+                // XorDev's double loop
+                for (float i = 1.0; i < 10.0; i += 1.0)
                 {
-                    // Fractal warping
-                    float2 v = p;
-                    for (float j = 1.0; j < 5.0; j += 1.0)
+                    // Inner loop: compute v
+                    v = p;
+                    for (float f = 1.0; f < 10.0; f += 1.0)
                     {
-                        v += sin(v.yx * j + i * 0.5 + time * 0.2) / (j + 1.0);
+                        // v += sin(ceil(v.yx*f+i*.3)+r-t/2.)/f
+                        // r is large (resolution), we use a constant offset instead
+                        float2 cellPos = ceil(v.yx * f + i * 0.3);
+                        v += sin(cellPos + 500.0 - t * 0.5) / f;
                     }
 
-                    // Distance field
-                    float d = length(p) - 2.0 - 1.0 / (abs(v.y) + 0.5);
-                    float glow = 0.08 / (abs(d) + 0.02);
+                    // l = dot(p,p) - 5. - 2./v.y
+                    float vy = v.y;
+                    if (abs(vy) < 0.01) vy = 0.01;
+                    float l = dot(p, p) - 5.0 - 2.0 / vy;
 
-                    // Rainbow colors
-                    float3 rgb = 0.5 + 0.5 * cos(i * 0.7 + float3(0.0, 2.1, 4.2) + time * 0.1);
-                    col.rgb += rgb * glow * _Intensity * 0.2;
+                    // o += .1/abs(l) * (cos(i/3.+.1/l+vec4(1,2,3,4))+1.)
+                    float absL = abs(l);
+                    if (absL < 0.001) absL = 0.001;
+
+                    float brightness = _ColorIntensity / absL;
+                    float4 colorPhase = float4(1.0, 2.0, 3.0, 4.0);
+                    float4 color = cos(i / 3.0 + 0.1 / absL + colorPhase) + 1.0;
+                    o += brightness * color;
                 }
 
-                // Stars
-                float2 starUV = uv * 100.0;
-                float star = frac(sin(dot(floor(starUV), float2(12.9898, 78.233))) * 43758.5453);
-                star = smoothstep(0.995, 1.0, star);
-                col.rgb += star * 0.8;
+                // Tone mapping with tanh
+                o = tanh(o);
+                o = max(o, 0.0);
 
-                // Tone mapping
-                col.rgb = 1.0 - exp(-col.rgb * 1.5);
-                col.a = 1.0;
-
-                return col;
+                return float4(o.rgb, 1.0);
             }
             ENDHLSL
         }
     }
+    Fallback "Universal Render Pipeline/Unlit"
 }
