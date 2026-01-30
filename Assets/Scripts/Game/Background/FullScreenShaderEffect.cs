@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.Rendering.RenderGraphModule;
 
 namespace Game.Background
 {
@@ -34,14 +35,20 @@ namespace Game.Background
         class FullScreenShaderPass : ScriptableRenderPass
         {
             private Settings settings;
-            private RenderTargetIdentifier source;
-            private RenderTargetHandle tempTexture;
+            private RTHandle tempTextureHandle;
+            private static readonly int TempTextureId = Shader.PropertyToID("_TempTexture");
 
             public FullScreenShaderPass(Settings settings)
             {
                 this.settings = settings;
                 this.renderPassEvent = settings.renderPassEvent;
-                tempTexture.Init("_TempTexture");
+            }
+
+            public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
+            {
+                var descriptor = renderingData.cameraData.cameraTargetDescriptor;
+                descriptor.depthBufferBits = 0;
+                RenderingUtils.ReAllocateHandleIfNeeded(ref tempTextureHandle, descriptor, name: "_TempTexture");
             }
 
             public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -50,22 +57,24 @@ namespace Game.Background
 
                 CommandBuffer cmd = CommandBufferPool.Get("FullScreenShaderEffect");
 
-                RenderTextureDescriptor descriptor = renderingData.cameraData.cameraTargetDescriptor;
-                descriptor.depthBufferBits = 0;
-
-                cmd.GetTemporaryRT(tempTexture.id, descriptor);
+                var cameraColorTarget = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
                 // フルスクリーンにマテリアルを描画
-                cmd.Blit(BuiltinRenderTextureType.None, tempTexture.Identifier(), settings.effectMaterial);
-                cmd.Blit(tempTexture.Identifier(), renderingData.cameraData.renderer.cameraColorTargetHandle);
+                Blitter.BlitCameraTexture(cmd, cameraColorTarget, tempTextureHandle, settings.effectMaterial, 0);
+                Blitter.BlitCameraTexture(cmd, tempTextureHandle, cameraColorTarget);
 
                 context.ExecuteCommandBuffer(cmd);
                 CommandBufferPool.Release(cmd);
             }
 
-            public override void FrameCleanup(CommandBuffer cmd)
+            public override void OnCameraCleanup(CommandBuffer cmd)
             {
-                cmd.ReleaseTemporaryRT(tempTexture.id);
+                // RTHandle is managed by RenderingUtils.ReAllocateHandleIfNeeded
+            }
+
+            public void Dispose()
+            {
+                tempTextureHandle?.Release();
             }
         }
     }
